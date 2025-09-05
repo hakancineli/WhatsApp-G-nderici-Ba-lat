@@ -137,7 +137,8 @@ async function checkConnectionStatus() {
         const response = await fetch('/api/status');
         const data = await response.json();
         
-        isConnected = data.connected && data.authenticated;
+        // Sunucu tarafında ready (isConnected) bazen geç gelebilir; authenticated yeterli sayılmalı
+        isConnected = (data.connected || data.authenticated);
         
         // Eğer kimlik doğrulaması yapılmışsa QR kodu temizle
         if (data.authenticated) {
@@ -536,10 +537,15 @@ async function updateStats() {
         }
         
         // İstatistikleri güncelle
-        document.getElementById('total-success').textContent = totalSuccess;
-        document.getElementById('total-skipped-stats').textContent = totalSkipped;
-        document.getElementById('total-error').textContent = totalError;
-        document.getElementById('last-activity').textContent = lastActivity;
+        const totalSuccessEl = document.getElementById('total-success');
+        const totalSkippedStatsEl = document.getElementById('total-skipped-stats');
+        const totalErrorEl = document.getElementById('total-error');
+        const lastActivityEl = document.getElementById('last-activity');
+        
+        if (totalSuccessEl) totalSuccessEl.textContent = totalSuccess;
+        if (totalSkippedStatsEl) totalSkippedStatsEl.textContent = totalSkipped;
+        if (totalErrorEl) totalErrorEl.textContent = totalError;
+        if (lastActivityEl) lastActivityEl.textContent = lastActivity;
         
     } catch (error) {
         console.error('İstatistik güncelleme hatası:', error);

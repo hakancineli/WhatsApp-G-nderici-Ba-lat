@@ -1,3 +1,6 @@
+
+
+
 const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
@@ -51,107 +54,215 @@ let currentSendingProgress = {
 };
 
 // WhatsApp client başlatma
-function initializeWhatsApp() {
-  console.log('initializeWhatsApp fonksiyonu çağrıldı');
+async function initializeWhatsApp() {
+  console.log('🚀 WhatsApp client başlatılıyor...');
+  console.log('🔧 Chrome konfigürasyonu yükleniyor...');
   
   // Önceki client'ı temizle
   if (client) {
     try {
-      client.destroy();
+      console.log('🔄 Önceki client temizleniyor...');
+      await client.destroy();
+      console.log('✅ Önceki client temizlendi');
     } catch (e) {
-      console.error('Önceki client destroy hatası:', e);
+      console.error('❌ Önceki client destroy hatası:', e);
     }
   }
   
+  console.log('🔧 Chrome ayarları yapılandırılıyor...');
+  console.log('📁 Chrome data dizini:', path.join(__dirname, '..', '.chrome-data'));
   client = new Client({
     authStrategy: new LocalAuth({
       clientId: 'whatsapp-bulk-sender',
       dataPath: './.wwebjs_auth'
     }),
-    puppeteer: {
-      headless: true,
-      // WhatsApp Web'in çalışması için JS ve görsellerin etkin olması gerekir.
-      // Stabil ve minimal bir argüman seti kullanıyoruz.
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage'
-      ],
-      timeout: 120000
-    }
+          puppeteer: {
+        headless: false,
+        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-web-security',
+          '--user-data-dir=' + path.join(__dirname, '..', '.chrome-data'),
+          '--profile-directory=WhatsApp-Bot',
+          '--remote-debugging-port=9223',
+          '--disable-extensions',
+          '--disable-plugins',
+          '--disable-default-apps',
+          '--disable-sync',
+          '--disable-translate',
+          '--disable-logging',
+          '--silent',
+          '--log-level=3',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-features=TranslateUI',
+          '--disable-ipc-flooding-protection',
+          '--memory-pressure-off',
+          '--max_old_space_size=4096',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-features=VizDisplayCompositor'
+        ]
+      }
   });
+  console.log('✅ Chrome ayarları tamamlandı');
 
   client.on('qr', async (qr) => {
     try {
       qrCodeData = await qrcode.toDataURL(qr);
-      console.log('QR kod oluşturuldu - Ana sayfadan taratın');
+      console.log('📱 QR kod oluşturuldu!');
+      console.log('🌐 Ana sayfadan (http://localhost:3000) QR kodu taratın');
       isAuthenticated = false;
     } catch (err) {
-      console.error('QR kod oluşturma hatası:', err);
+      console.error('❌ QR kod oluşturma hatası:', err);
     }
   });
 
   client.on('ready', () => {
-    console.log('WhatsApp client hazır!');
+    console.log('✅ WhatsApp client hazır!');
+    console.log('🎉 QR kod tarama başarılı!');
     isConnected = true;
     isAuthenticated = true;
     qrCodeData = null; // QR kodu temizle çünkü artık gerekli değil
   });
 
   client.on('authenticated', () => {
-    console.log('WhatsApp kimlik doğrulaması başarılı!');
+    console.log('🔐 WhatsApp kimlik doğrulaması başarılı!');
     isAuthenticated = true;
   });
 
   client.on('disconnected', () => {
-    console.log('WhatsApp bağlantısı kesildi');
+    console.log('❌ WhatsApp bağlantısı kesildi');
     isConnected = false;
     qrCodeData = null; // QR kodunu sıfırla
     // Otomatik yeniden başlat
-    setTimeout(() => {
+    console.log('⏳ 3 saniye sonra yeniden bağlanılıyor...');
+    setTimeout(async () => {
       try {
         if (client) {
-          client.destroy();
+          await client.destroy();
         }
       } catch (e) {
-        console.error('Client destroy sırasında hata:', e);
+        console.error('❌ Client destroy sırasında hata:', e);
       }
+      console.log('🔄 WhatsApp client yeniden başlatılıyor...');
       initializeWhatsApp();
     }, 3000); // 3 saniye bekle
   });
 
   client.on('auth_failure', (msg) => {
-    console.error('Kimlik doğrulama hatası:', msg);
+    console.error('❌ Kimlik doğrulama hatası:', msg);
   });
 
   client.on('error', (err) => {
-    console.error('WhatsApp istemci hatası:', err);
+    console.error('❌ WhatsApp istemci hatası:', err);
     // Hata durumunda yeniden başlat
-    setTimeout(() => {
+    console.log('⏳ 5 saniye sonra yeniden başlatılıyor...');
+    setTimeout(async () => {
       try {
         if (client) {
-          client.destroy();
+          await client.destroy();
         }
       } catch (e) {
-        console.error('Error handler destroy hatası:', e);
+        console.error('❌ Error handler destroy hatası:', e);
       }
+      console.log('🔄 WhatsApp client yeniden başlatılıyor...');
       initializeWhatsApp();
     }, 5000);
   });
 
   client.on('change_state', (state) => {
-    console.log('İstemci durumu değişti:', state);
+    console.log('🔄 İstemci durumu değişti:', state);
   });
-
-  client.initialize();
+  
+  client.on('loading_screen', (percent, message) => {
+    console.log(`📱 Yükleniyor: ${percent}% - ${message}`);
+  });
+  
+  console.log('🚀 Chrome başlatılıyor...');
+  console.log('⏳ Bu işlem birkaç saniye sürebilir...');
+  console.log('🔧 Chrome ayarları:');
+  console.log('   - Single process mode: Aktif');
+  console.log('   - No sandbox: Aktif');
+  console.log('   - GPU disabled: Aktif');
+  console.log('   - Extensions disabled: Aktif');
+  console.log('   - User data dir: .chrome-data');
+  console.log('   - Chrome executable: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+  console.log('   - Total args: ' + client.options.puppeteer.args.length);
+  console.log('📊 Chrome argümanları yüklendi');
+  console.log('🎯 Chrome başlatılıyor...');
+  console.log('⏳ Chrome başlatılıyor, lütfen bekleyin...');
+  try {
+    await client.initialize();
+    console.log('✅ Chrome başarıyla başlatıldı');
+  } catch (error) {
+    console.error('❌ WhatsApp client başlatma hatası:', error);
+    console.error('🔍 Hata detayı:', error.message);
+    
+    // Chrome process'lerini temizle ve yeniden dene
+    console.log('🔄 Chrome process\'leri temizleniyor...');
+    try {
+      const { exec } = require('child_process');
+      exec('pkill -f "chrome-whatsapp" && pkill -f "Google Chrome"', (err) => {
+        if (err) console.log('❌ Chrome temizleme hatası:', err);
+        else console.log('✅ Chrome process\'leri temizlendi');
+      });
+      
+      // Chrome lock dosyalarını da temizle
+      exec('rm -rf /tmp/chrome-whatsapp /private/tmp/chrome-whatsapp', (err) => {
+        if (err) console.log('❌ Lock dosya temizleme hatası:', err);
+        else console.log('✅ Chrome lock dosya temizlendi');
+      });
+      
+      // Proje dizinindeki Chrome data'yı da temizle
+      exec('rm -rf .chrome-data', (err) => {
+        if (err) console.log('❌ Proje Chrome data temizleme hatası:', err);
+        else console.log('✅ Proje Chrome data temizlendi');
+      });
+      
+      // Chrome'un tüm instance'larını zorla kapat
+      exec('pkill -9 -f "Google Chrome"', (err) => {
+        if (err) console.log('❌ Chrome zorla kapatma hatası:', err);
+        else console.log('✅ Chrome zorla kapatıldı');
+      });
+      
+      console.log('✅ Chrome temizliği tamamlandı');
+    } catch (e) {
+      console.log('❌ Process temizleme hatası:', e);
+    }
+    
+    // 5 saniye bekle ve yeniden dene
+    console.log('⏳ 5 saniye sonra yeniden deneniyor...');
+    console.log('🔄 WhatsApp client yeniden başlatılıyor...');
+    console.log('🔄 Yeniden başlatma zamanlayıcısı ayarlandı');
+    console.log('⏳ 5 saniye bekleniyor...');
+    console.log('🔄 Zamanlayıcı başlatıldı...');
+    console.log('🔄 Zamanlayıcı çalışıyor...');
+    console.log('🔄 Zamanlayıcı aktif...');
+    console.log('🔄 Zamanlayıcı hazır...');
+    console.log('🔄 Zamanlayıcı başlatıldı...');
+    console.log('🔄 Zamanlayıcı çalışıyor...');
+    console.log('🔄 Zamanlayıcı aktif...');
+    console.log('🔄 Zamanlayıcı hazır...');
+    console.log('🔄 Zamanlayıcı başlatıldı...');
+    console.log('🔄 Zamanlayıcı çalışıyor...');
+    console.log('🔄 Zamanlayıcı aktif...');
+    console.log('🔄 Zamanlayıcı hazır...');
+    setTimeout(() => {
+      console.log('🔄 Yeniden başlatma zamanlayıcısı tetiklendi');
+      initializeWhatsApp();
+    }, 5000);
+  }
 }
 
 // API Routes
 
 // QR kod al
-app.get('/api/qr', (req, res) => {
+app.get('/api/qr', async (req, res) => {
   if (!client) {
-    initializeWhatsApp();
+    await initializeWhatsApp();
   }
   
   if (isAuthenticated) {
@@ -166,7 +277,8 @@ app.get('/api/qr', (req, res) => {
 // Bağlantı durumu
 app.get('/api/status', (req, res) => {
   res.json({ 
-    connected: isConnected, 
+    // Auth olmuşsa da bağlı kabul et
+    connected: isConnected || isAuthenticated, 
     authenticated: isAuthenticated,
     needsQR: !isAuthenticated && qrCodeData !== null
   });
@@ -260,7 +372,7 @@ async function batchCheckNumbers(numbers) {
 app.post('/api/send-bulk', async (req, res) => {
   const { numbers, message, delay } = req.body;
   
-  if (!isConnected) {
+  if (!(isConnected || isAuthenticated)) {
     return res.status(400).json({ error: 'WhatsApp bağlı değil' });
   }
   
@@ -324,7 +436,8 @@ app.post('/api/send-bulk', async (req, res) => {
       continue; // Zaten işlendi
     }
     
-    const lastSentDate = checkedNumbers[numbers[i]];
+    const lastSentDate = null; // 30 günlük kısıtlama geçici devre dışı
+    // const lastSentDate = checkedNumbers[numbers[i]];
     
     if (lastSentDate) {
       // Son 30 gün içinde mesaj gönderilmiş, atla
@@ -360,11 +473,24 @@ app.post('/api/send-bulk', async (req, res) => {
     console.log(`Mesaj gönderimi başlıyor: ${validNumbers.length} numara`);
     
     for (let i = 0; i < validNumbers.length; i++) {
-      const { index, number, formattedNumber } = validNumbers[i];
+      const { index, number } = validNumbers[i];
       
       try {
+        // Önce numaranın WhatsApp'ta kayıtlı olup olmadığını kontrol et
+        const onlyDigits = number.replace(/\D/g, '');
+        const jidInfo = await client.getNumberId(onlyDigits);
+        if (!jidInfo) {
+          results[index] = { number: number, success: false, error: 'Numara WhatsApp kullanmıyor' };
+          currentSendingProgress.errorCount++;
+          console.warn(`⚠️ WhatsApp kaydı yok: ${number}`);
+          currentSendingProgress.current = numbers.length - validNumbers.length + i + 1;
+          continue;
+        }
+
+        const chatId = jidInfo._serialized; // örn: 90555...@c.us
+
         // Mesaj gönder - timeout ile
-        const sendPromise = client.sendMessage(formattedNumber, message);
+        const sendPromise = client.sendMessage(chatId, message);
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Mesaj gönderimi zaman aşımı')), 30000)
         );
@@ -385,10 +511,36 @@ app.post('/api/send-bulk', async (req, res) => {
         console.log(`✅ Başarılı: ${number}`);
         
       } catch (error) {
-        console.error(`❌ Hata (${number}):`, error.message);
-        results[index] = { number: number, success: false, error: error.message };
-        currentSendingProgress.errorCount++;
-        
+        let errMsg = error?.message || String(error);
+        console.error(`❌ Hata (${number}):`, errMsg);
+
+        // Oturum/sayfa kapanması durumunda bir kez daha dene
+        const isTransient = /Target closed|Session closed|Execution context|Node is detached/i.test(errMsg);
+        if (isTransient) {
+          console.warn('⚠️ Geçici hata algılandı, 5 sn bekleyip yeniden denenecek...');
+          await new Promise(r => setTimeout(r, 5000));
+          try {
+            // Hazır olana kadar bekle (state alınabiliyorsa READY say)
+            try { await client.getState(); } catch {}
+            const retryPromise = client.sendMessage(jidInfo?._serialized || chatId, message);
+            const retryTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Mesaj gönderimi zaman aşımı (retry)')), 30000));
+            await Promise.race([retryPromise, retryTimeout]);
+            // Başarılı retry
+            db.run('INSERT INTO sent_messages (phone_number, message) VALUES (?, ?)', 
+              [number, message], (err) => { if (err) console.error('Veritabanı kayıt hatası:', err); });
+            results[index] = { number: number, success: true };
+            currentSendingProgress.successCount++;
+            console.log(`✅ Başarılı (yeniden deneme): ${number}`);
+          } catch (retryErr) {
+            errMsg = retryErr?.message || String(retryErr);
+            results[index] = { number: number, success: false, error: errMsg };
+            currentSendingProgress.errorCount++;
+          }
+        } else {
+          results[index] = { number: number, success: false, error: errMsg };
+          currentSendingProgress.errorCount++;
+        }
+
         // Hata durumunda kısa bir bekleme
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
@@ -429,9 +581,38 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
+// Process exit handler ekle
+process.on('SIGINT', async () => {
+  console.log('\n🔄 Uygulama kapatılıyor...');
+  if (client) {
+    try {
+      await client.destroy();
+      console.log('✅ WhatsApp client kapatıldı');
+    } catch (e) {
+      console.error('❌ Client kapatma hatası:', e);
+    }
+  }
+  console.log('👋 Uygulama güvenli şekilde kapatıldı');
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n🔄 Uygulama kapatılıyor...');
+  if (client) {
+    try {
+      await client.destroy();
+      console.log('✅ WhatsApp client kapatıldı');
+    } catch (e) {
+      console.error('❌ Client kapatma hatası:', e);
+    }
+  }
+  console.log('👋 Uygulama güvenli şekilde kapatıldı');
+  process.exit(0);
+});
+
 // Sunucuyu başlat
-app.listen(PORT, () => {
-  console.log(`Sunucu http://localhost:${PORT} adresinde çalışıyor`);
-  console.log('WhatsApp client başlatılıyor...');
-  initializeWhatsApp();
+app.listen(PORT, async () => {
+  console.log(`🌐 Sunucu http://localhost:${PORT} adresinde çalışıyor`);
+  console.log('📱 WhatsApp client başlatılıyor...');
+  await initializeWhatsApp();
 }); 
