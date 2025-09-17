@@ -4,11 +4,7 @@
     { "src": "public/**/*", "use": "@vercel/static" }
   ],
   "routes": [
-<<<<<<< HEAD
     { "src": "/api/(.*)", "dest": "https://35.189.194.240/api/$1" },
-=======
-    { "src": "/api/(.*)", "dest": "https://api.msrentacar.com.tr/api/$1" },
->>>>>>> 92f96f94f7316d1a9ce6bc8822cce4fd8b22330a
     { "src": "/(.*)", "dest": "/public/$1" }
   ]
 }
