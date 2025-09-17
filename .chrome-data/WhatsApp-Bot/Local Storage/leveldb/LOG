@@ -1,5 +1,6 @@
-2025/09/05-17:59:35.849 5d408 Creating DB /Users/hakancineli/whatsapp-temiz/.chrome-data/WhatsApp-Bot/Local Storage/leveldb since it was missing.
-2025/09/05-17:59:35.856 5d408 Reusing MANIFEST /Users/hakancineli/whatsapp-temiz/.chrome-data/WhatsApp-Bot/Local Storage/leveldb/MANIFEST-000001
-2025/09/05-18:05:31.397 5d40a Level-0 table #5: started
-2025/09/05-18:05:31.401 5d40a Level-0 table #5: 42000 bytes OK
-2025/09/05-18:05:31.404 5d40a Delete type=0 #3
+2025/09/17-17:27:26.315 1b5e0 Reusing MANIFEST /Users/hakancineli/whatsapp-temiz/.chrome-data/WhatsApp-Bot/Local Storage/leveldb/MANIFEST-000001
+2025/09/17-17:27:26.318 1b5e0 Recovering log #3
+2025/09/17-17:27:26.319 1b5e0 Reusing old log /Users/hakancineli/whatsapp-temiz/.chrome-data/WhatsApp-Bot/Local Storage/leveldb/000003.log 
+2025/09/17-17:44:28.414 1b5e3 Level-0 table #5: started
+2025/09/17-17:44:28.417 1b5e3 Level-0 table #5: 18077 bytes OK
+2025/09/17-17:44:28.421 1b5e3 Delete type=0 #3

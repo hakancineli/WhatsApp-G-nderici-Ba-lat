@@ -50,8 +50,25 @@ let currentSendingProgress = {
   total: 0,
   successCount: 0,
   errorCount: 0,
-  isActive: false
+  isActive: false,
+  isPaused: false,
+  isStopped: false
 };
+
+// Send control state
+const sendControlState = {
+  isPaused: false,
+  isStopped: false,
+  reason: null,
+  updatedAt: null
+};
+
+// Auto pause config/state
+const autoPauseConfig = {
+  enabled: true,
+  durationMs: 10 * 60 * 1000 // 10 dakika
+};
+let autoPauseTimer = null;
 
 // WhatsApp client başlatma
 async function initializeWhatsApp() {
@@ -180,6 +197,36 @@ async function initializeWhatsApp() {
   client.on('loading_screen', (percent, message) => {
     console.log(`📱 Yükleniyor: ${percent}% - ${message}`);
   });
+
+  // Gelen mesajları dinle ve otomatik duraklat
+  client.on('message', async (message) => {
+    try {
+      // Sadece bize gelen (bizden olmayan) mesajlarda çalış
+      if (message.fromMe) return;
+      if (!autoPauseConfig.enabled) return;
+
+      // Otomatik duraklatmayı tetikle
+      if (!sendControlState.isPaused && !sendControlState.isStopped) {
+        sendControlState.isPaused = true;
+        sendControlState.reason = 'auto-pause:inbound-message';
+        sendControlState.updatedAt = new Date().toISOString();
+        currentSendingProgress.isPaused = true;
+        console.warn('⏸️ Gelen mesaj algılandı, gönderim otomatik olarak duraklatıldı');
+      }
+
+      // Varsa önceki zamanlayıcıyı temizle ve yeniden başlat
+      if (autoPauseTimer) clearTimeout(autoPauseTimer);
+      autoPauseTimer = setTimeout(() => {
+        sendControlState.isPaused = false;
+        sendControlState.reason = null;
+        sendControlState.updatedAt = new Date().toISOString();
+        currentSendingProgress.isPaused = false;
+        console.log('▶️ Otomatik duraklatma süresi doldu, gönderim devam edebilir');
+      }, autoPauseConfig.durationMs);
+    } catch (e) {
+      console.error('Otomatik duraklatma hata:', e);
+    }
+  });
   
   console.log('🚀 Chrome başlatılıyor...');
   console.log('⏳ Bu işlem birkaç saniye sürebilir...');
@@ -289,6 +336,57 @@ app.get('/api/progress', (req, res) => {
   res.json(currentSendingProgress);
 });
 
+// Control endpoints: pause/resume/stop/status
+app.get('/api/control/status', (req, res) => {
+  res.json({
+    ...sendControlState,
+    progress: currentSendingProgress,
+    autoPause: autoPauseConfig
+  });
+});
+
+app.post('/api/control/pause', (req, res) => {
+  const { reason } = req.body || {};
+  sendControlState.isPaused = true;
+  sendControlState.isStopped = false;
+  sendControlState.reason = reason || 'manual-pause';
+  sendControlState.updatedAt = new Date().toISOString();
+  currentSendingProgress.isPaused = true;
+  currentSendingProgress.isStopped = false;
+  res.json({ ok: true, ...sendControlState });
+});
+
+app.post('/api/control/resume', (req, res) => {
+  sendControlState.isPaused = false;
+  sendControlState.reason = null;
+  sendControlState.updatedAt = new Date().toISOString();
+  currentSendingProgress.isPaused = false;
+  res.json({ ok: true, ...sendControlState });
+});
+
+app.post('/api/control/stop', (req, res) => {
+  const { reason } = req.body || {};
+  sendControlState.isStopped = true;
+  sendControlState.isPaused = false;
+  sendControlState.reason = reason || 'manual-stop';
+  sendControlState.updatedAt = new Date().toISOString();
+  currentSendingProgress.isStopped = true;
+  currentSendingProgress.isPaused = false;
+  res.json({ ok: true, ...sendControlState });
+});
+
+// Auto-pause ayarlarını al/güncelle
+app.get('/api/control/auto-pause', (req, res) => {
+  res.json(autoPauseConfig);
+});
+
+app.post('/api/control/auto-pause', (req, res) => {
+  const { enabled, durationMs } = req.body || {};
+  if (typeof enabled === 'boolean') autoPauseConfig.enabled = enabled;
+  if (Number.isFinite(durationMs) && durationMs >= 0) autoPauseConfig.durationMs = durationMs;
+  res.json({ ok: true, autoPause: autoPauseConfig });
+});
+
 // Mesaj şablonu kaydet
 app.post('/api/templates', (req, res) => {
   const { name, content } = req.body;
@@ -391,8 +489,16 @@ app.post('/api/send-bulk', async (req, res) => {
     successCount: 0,
     errorCount: 0,
     skippedCount: 0,
-    isActive: true
+    isActive: true,
+    isPaused: false,
+    isStopped: false
   };
+
+  // Yeni iş başlarken durdurma/duraklatma bayraklarını sıfırla
+  sendControlState.isStopped = false;
+  sendControlState.isPaused = false;
+  sendControlState.reason = null;
+  sendControlState.updatedAt = new Date().toISOString();
 
   const delayMs = (delay || 5) * 1000; // saniyeyi milisaniyeye çevir
   const results = [];
@@ -473,6 +579,19 @@ app.post('/api/send-bulk', async (req, res) => {
     console.log(`Mesaj gönderimi başlıyor: ${validNumbers.length} numara`);
     
     for (let i = 0; i < validNumbers.length; i++) {
+      // Durdurulmuşsa işi bitir
+      if (sendControlState.isStopped) {
+        console.warn('⛔ Gönderim kullanıcı tarafından DURDURULDU');
+        currentSendingProgress.isStopped = true;
+        break;
+      }
+
+      // Duraklatılmışsa devam edene kadar bekle
+      while (sendControlState.isPaused && !sendControlState.isStopped) {
+        currentSendingProgress.isPaused = true;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      currentSendingProgress.isPaused = false;
       const { index, number } = validNumbers[i];
       
       try {
@@ -495,6 +614,7 @@ app.post('/api/send-bulk', async (req, res) => {
           setTimeout(() => reject(new Error('Mesaj gönderimi zaman aşımı')), 30000)
         );
         
+        // Durdurma/pause kontrolü gönderim sırasında da etkili olmaz; bu nedenle sadece race bekliyoruz
         await Promise.race([sendPromise, timeoutPromise]);
         
         // Gönderilen mesajı veritabanına kaydet
@@ -548,9 +668,30 @@ app.post('/api/send-bulk', async (req, res) => {
       // Progress'i güncelle
       currentSendingProgress.current = numbers.length - validNumbers.length + i + 1;
       
-      // Gecikme (son mesaj hariç)
+      // Gecikme (son mesaj hariç) — gecikme sırasında da pause/stop kontrolü yap
       if (i < validNumbers.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, delayMs));
+        const step = 250;
+        let waited = 0;
+        while (waited < delayMs) {
+          if (sendControlState.isStopped) {
+            console.warn('⛔ Gönderim DURDURULDU (gecikme esnasında)');
+            currentSendingProgress.isStopped = true;
+            break;
+          }
+          while (sendControlState.isPaused && !sendControlState.isStopped) {
+            currentSendingProgress.isPaused = true;
+            await new Promise(r => setTimeout(r, 500));
+          }
+          currentSendingProgress.isPaused = false;
+          if (sendControlState.isStopped) break;
+          const remain = delayMs - waited;
+          const chunk = remain < step ? remain : step;
+          await new Promise(r => setTimeout(r, chunk));
+          waited += chunk;
+        }
+        if (sendControlState.isStopped) {
+          break;
+        }
       }
     }
     
