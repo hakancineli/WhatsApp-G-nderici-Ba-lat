@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "public/**/*", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "https://api.msrentacar.com.tr/api/$1" },
+    { "src": "/(.*)", "dest": "/public/$1" }
+  ]
+}
