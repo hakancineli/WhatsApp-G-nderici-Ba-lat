@@ -88,14 +88,20 @@ async function initializeWhatsApp() {
   
   console.log('🔧 Chrome ayarları yapılandırılıyor...');
   console.log('📁 Chrome data dizini:', path.join(__dirname, '..', '.chrome-data'));
+  // Ortama göre Chrome yolu ve headless modu belirle
+  const isLinux = process.platform === 'linux';
+  const isMac = process.platform === 'darwin';
+  const chromeExecutable = process.env.CHROME_BIN || (isMac ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined);
+  const headlessMode = process.env.HEADLESS ? process.env.HEADLESS === 'true' : isLinux;
+
   client = new Client({
     authStrategy: new LocalAuth({
       clientId: 'whatsapp-bulk-sender',
       dataPath: './.wwebjs_auth'
     }),
-          puppeteer: {
-        headless: false,
-        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    puppeteer: {
+        headless: headlessMode,
+        executablePath: chromeExecutable,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -236,7 +242,7 @@ async function initializeWhatsApp() {
   console.log('   - GPU disabled: Aktif');
   console.log('   - Extensions disabled: Aktif');
   console.log('   - User data dir: .chrome-data');
-  console.log('   - Chrome executable: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+  console.log('   - Chrome executable:', chromeExecutable || 'puppeteer default');
   console.log('   - Total args: ' + client.options.puppeteer.args.length);
   console.log('📊 Chrome argümanları yüklendi');
   console.log('🎯 Chrome başlatılıyor...');

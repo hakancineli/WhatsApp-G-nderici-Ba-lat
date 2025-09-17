@@ -29,8 +29,14 @@ whatsapp-temiz/
 
 2. Sunucuyu başlatın:
    ```bash
+   # macOS (GUI Chrome ile):
    node server/server.js
+
+   # Linux (sunucularda headless):
+   HEADLESS=true node server/server.js
    ```
+
+Linux sunucularda Chrome/Chromium otomatik indirilecektir (puppeteer). İsterseniz kendi Chrome yolunuzu `CHROME_BIN` ile geçebilirsiniz.
 
 3. Tarayıcıda `http://localhost:3001` adresine gidin
 
