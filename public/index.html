@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Toplu Mesaj Gönderici</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fab fa-whatsapp"></i> WhatsApp Toplu Mesaj Gönderici</h1>
+            <p>Güvenli ve kolay toplu mesaj gönderimi</p>
+        </header>
+
+        <div class="main-content">
+            <!-- QR Kod Bölümü -->
+            <div class="card" id="qr-section">
+                <h2><i class="fas fa-qrcode"></i> WhatsApp Bağlantısı</h2>
+                <div class="qr-container">
+                    <div id="qr-code" class="qr-placeholder">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>QR kod yükleniyor...</p>
+                    </div>
+                    <div id="connection-status" class="status-disconnected">
+                        <i class="fas fa-times-circle"></i>
+                        <span>Bağlı değil</span>
+                    </div>
+                </div>
+                <button id="refresh-qr" class="btn btn-secondary">
+                    <i class="fas fa-refresh"></i> QR Kodu Yenile
+                </button>
+            </div>
+
+            <!-- Numara Listesi Bölümü -->
+            <div class="card">
+                <h2><i class="fas fa-phone"></i> Numara Listesi</h2>
+                <div class="input-group">
+                    <label for="phone-numbers">Telefon Numaraları (Her satıra bir numara):</label>
+                    <textarea id="phone-numbers" placeholder="+905551234567&#10;+905551234568&#10;+905551234569" rows="8"></textarea>
+                    <div class="number-count">
+                        <span id="number-count">0</span> numara eklendi
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Numara Listesi (Gönderim Durumu):</label>
+                    <div id="visual-number-list" class="visual-number-list"></div>
+                </div>
+                <div class="button-group">
+                    <button id="clear-numbers" class="btn btn-danger">
+                        <i class="fas fa-trash"></i> Listeyi Temizle
+                    </button>
+                    <button id="load-example" class="btn btn-secondary">
+                        <i class="fas fa-download"></i> Örnek Yükle
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mesaj Şablonu Bölümü -->
+            <div class="card">
+                <h2><i class="fas fa-edit"></i> Mesaj Şablonu</h2>
+                <div class="template-controls">
+                    <select id="template-select" class="form-control">
+                        <option value="">Şablon seçin...</option>
+                    </select>
+                    <button id="save-template" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Şablonu Kaydet
+                    </button>
+                </div>
+                <div class="input-group">
+                    <label for="message-content">Mesaj İçeriği:</label>
+                    <textarea id="message-content" placeholder="Mesajınızı buraya yazın..." rows="6"></textarea>
+                    <div class="message-info">
+                        <span id="message-length">0</span> karakter
+                    </div>
+                </div>
+                <div class="template-save-form" id="template-save-form" style="display: none;">
+                    <input type="text" id="template-name" placeholder="Şablon adı" class="form-control">
+                    <button id="confirm-save-template" class="btn btn-success">
+                        <i class="fas fa-check"></i> Kaydet
+                    </button>
+                    <button id="cancel-save-template" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> İptal
+                    </button>
+                </div>
+            </div>
+
+            <!-- Gönderim Ayarları -->
+            <div class="card">
+                <h2><i class="fas fa-cog"></i> Gönderim Ayarları</h2>
+                <div class="settings-grid">
+                    <div class="setting-item">
+                        <label for="delay-input">Gecikme Süresi (saniye):</label>
+                        <input type="number" id="delay-input" value="5" min="1" max="60" class="form-control">
+                    </div>
+                    <div class="setting-item">
+                        <label for="send-order">Gönderim Sırası:</label>
+                        <select id="send-order" class="form-control">
+                            <option value="sequential">Sıralı</option>
+                            <option value="random">Rastgele</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label for="preview-mode">Önizleme Modu:</label>
+                        <input type="checkbox" id="preview-mode" class="form-checkbox">
+                        <span class="checkbox-label">Sadece önizleme (gönderme)</span>
+                    </div>
+                </div>
+                <button id="start-sending" class="btn btn-success btn-large" disabled>
+                    <i class="fas fa-paper-plane"></i> Gönderimi Başlat
+                </button>
+            </div>
+
+            <!-- Gönderim Durumu -->
+            <div class="card" id="sending-status" style="display: none;">
+                <h2><i class="fas fa-chart-line"></i> Gönderim Durumu</h2>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <div class="progress-text">
+                        <span id="progress-text">0 / 0</span>
+                        <span id="progress-percentage">0%</span>
+                    </div>
+                </div>
+                <div class="status-details">
+                    <div class="status-item">
+                        <i class="fas fa-check-circle text-success"></i>
+                        <span>Başarılı: <span id="success-count">0</span></span>
+                    </div>
+                    <div class="status-item">
+                        <i class="fas fa-times-circle text-danger"></i>
+                        <span>Başarısız: <span id="error-count">0</span></span>
+                    </div>
+                    <div class="status-item">
+                        <i class="fas fa-clock text-warning"></i>
+                        <span>Atlanan: <span id="skipped-count">0</span></span>
+                    </div>
+                </div>
+                <button id="stop-sending" class="btn btn-danger">
+                    <i class="fas fa-stop"></i> Gönderimi Durdur
+                </button>
+            </div>
+
+            <!-- İstatistik Kartı -->
+            <div class="card" id="stats-card">
+                <h2><i class="fas fa-chart-bar"></i> İstatistikler</h2>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-icon success">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-number" id="total-success">0</div>
+                            <div class="stat-label">Başarılı Gönderim</div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-icon warning">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-number" id="total-skipped-stats">0</div>
+                            <div class="stat-label">Atlanan Numara</div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-icon error">
+                            <i class="fas fa-times-circle"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-number" id="total-error">0</div>
+                            <div class="stat-label">Başarısız</div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-icon info">
+                            <i class="fas fa-calendar"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-number" id="last-activity">-</div>
+                            <div class="stat-label">Son Aktivite</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Atlanan Numaralar -->
+            <div class="card" id="skipped-numbers" style="display: none;">
+                <h2><i class="fas fa-clock"></i> Atlanan Numaralar (Son 30 Gün İçinde Mesaj Gönderilmiş)</h2>
+                <div class="skipped-numbers-container">
+                    <div id="skipped-numbers-list" class="skipped-numbers-list">
+                        <div class="empty-state">
+                            <i class="fas fa-check-circle"></i>
+                            <p>Atlanan numara yok</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="skipped-summary">
+                    <p><strong>Toplam atlanan:</strong> <span id="total-skipped">0</span> numara</p>
+                    <p><em>Bu numaralara son 30 gün içinde mesaj gönderildiği için atlandı.</em></p>
+                </div>
+            </div>
+
+            <!-- Gönderilen Mesajlar -->
+            <div class="card">
+                <h2><i class="fas fa-history"></i> Gönderilen Mesajlar</h2>
+                <div class="sent-messages-container">
+                    <div id="sent-messages-list" class="sent-messages-list">
+                        <div class="empty-state">
+                            <i class="fas fa-inbox"></i>
+                            <p>Henüz mesaj gönderilmedi</p>
+                        </div>
+                    </div>
+                </div>
+                <button id="refresh-sent" class="btn btn-secondary">
+                    <i class="fas fa-refresh"></i> Listeyi Yenile
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Bilgi</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message"></p>
+            </div>
+            <div class="modal-footer">
+                <button id="modal-ok" class="btn btn-primary">Tamam</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 

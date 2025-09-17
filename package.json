@@ -1,0 +1,19 @@
+{
+  "name": "whatsapp-toplu-mesaj",
+  "version": "1.0.0",
+  "description": "Toplu WhatsApp mesaj gönderme uygulaması",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "nodemon server/server.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.17.16",
+    "bl": "^6.1.0",
+    "cors": "^2.8.5",
+    "qrcode": "^1.5.4",
+    "sqlite3": "^5.1.7",
+    "venom-bot": "^5.3.0",
+    "whatsapp-web.js": "^1.33.2"
+  }
+}
