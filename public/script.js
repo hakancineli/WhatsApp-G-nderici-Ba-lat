@@ -26,6 +26,20 @@ const elements = {
     errorCount: document.getElementById('error-count'),
     skippedCount: document.getElementById('skipped-count'),
     stopSending: document.getElementById('stop-sending'),
+    pauseSending: document.getElementById('pause-sending'),
+    resumeSending: document.getElementById('resume-sending'),
+    autoResumeInfo: document.getElementById('auto-resume-info'),
+    countdownTimer: document.getElementById('countdown-timer'),
+    imageUpload: document.getElementById('image-upload'),
+    imagePreview: document.getElementById('image-preview'),
+    previewImg: document.getElementById('preview-img'),
+    removeImage: document.getElementById('remove-image'),
+    loadSampleImage: document.getElementById('load-sample-image'),
+    singleTemplateMode: document.getElementById('single-template-mode'),
+    multipleTemplateMode: document.getElementById('multiple-template-mode'),
+    templateCheckboxList: document.getElementById('template-checkbox-list'),
+    selectAllTemplates: document.getElementById('select-all-templates'),
+    selectedTemplatesCount: document.getElementById('selected-templates-count'),
     sentMessagesList: document.getElementById('sent-messages-list'),
     refreshSent: document.getElementById('refresh-sent'),
     skippedNumbers: document.getElementById('skipped-numbers'),
@@ -44,6 +58,11 @@ let isSending = false;
 let shouldStopSending = false;
 let templates = [];
 let progressInterval = null;
+let autoResumeCountdown = null;
+let autoResumeTimer = null;
+let selectedImage = null;
+let selectedTemplates = [];
+let currentTemplateMode = 'single';
 
 // Sayfa yüklendiğinde çalışacak fonksiyonlar
 document.addEventListener('DOMContentLoaded', function() {
@@ -62,6 +81,14 @@ function initializeApp() {
     updateMessageLength();
     hideSkippedNumbers(); // Atlanan numaralar bölümünü başlangıçta gizle
     updateStats(); // İstatistikleri güncelle
+    
+    // Varsayılan şablon modunu ayarla
+    currentTemplateMode = 'single';
+    
+    // Element kontrolü
+    if (!elements.messageLength) {
+        console.warn('messageLength elementi bulunamadı');
+    }
 }
 
 // Event listener'ları ayarla
@@ -86,7 +113,20 @@ function setupEventListeners() {
     // Gönderim işlemleri
     elements.startSending.addEventListener('click', startBulkSending);
     elements.stopSending.addEventListener('click', stopBulkSending);
+    elements.pauseSending.addEventListener('click', pauseBulkSending);
+    elements.resumeSending.addEventListener('click', resumeBulkSending);
     elements.refreshSent.addEventListener('click', loadSentMessages);
+    
+    // Görsel işlemleri
+    elements.imageUpload.addEventListener('change', handleImageUpload);
+    elements.removeImage.addEventListener('click', removeSelectedImage);
+    elements.loadSampleImage.addEventListener('click', loadSampleImage);
+    
+    // Şablon modu değişimi
+    document.querySelectorAll('input[name="template-mode"]').forEach(radio => {
+        radio.addEventListener('change', handleTemplateModeChange);
+    });
+    elements.selectAllTemplates.addEventListener('click', selectAllTemplates);
     
     // Modal
     elements.modalOk.addEventListener('click', closeModal);
@@ -173,9 +213,18 @@ function updateConnectionStatus() {
 // Gönder butonunu güncelle
 function updateSendButton() {
     const hasNumbers = getPhoneNumbers().length > 0;
-    const hasMessage = elements.messageContent.value.trim().length > 0;
+    let canSend = false;
     
-    elements.startSending.disabled = !isConnected || !hasNumbers || !hasMessage;
+    if (currentTemplateMode === 'multiple') {
+        // Çoklu şablon modunda: numara + seçili şablon yeterli
+        canSend = hasNumbers && selectedTemplates.length > 0;
+    } else {
+        // Tek şablon modunda: numara + mesaj içeriği gerekli
+        const hasMessage = elements.messageContent.value.trim().length > 0;
+        canSend = hasNumbers && hasMessage;
+    }
+    
+    elements.startSending.disabled = !isConnected || !canSend;
 }
 
 // LocalStorage anahtarları
@@ -236,8 +285,32 @@ function updateVisualNumberList(sentStatus = {}) {
 
 // Mesaj uzunluğunu güncelle
 function updateMessageLength() {
+    if (!elements.messageContent || !elements.messageLength) return;
+    
     const length = elements.messageContent.value.length;
     elements.messageLength.textContent = length;
+    
+    // Renk kodlaması ekle
+    const messageInfo = elements.messageLength.parentElement;
+    if (!messageInfo) return;
+    
+    // Element referansını güncelle
+    elements.messageLength = document.getElementById('message-length');
+    
+    if (selectedImage && length > 1024) {
+        messageInfo.style.color = '#dc3545'; // Kırmızı
+        messageInfo.innerHTML = `<span id="message-length">${length}</span> karakter <span style="color: #dc3545;">(Görsel ile max 1024)</span>`;
+    } else if (!selectedImage && length > 4096) {
+        messageInfo.style.color = '#ffc107'; // Sarı
+        messageInfo.innerHTML = `<span id="message-length">${length}</span> karakter <span style="color: #ffc107;">(Uzun mesaj uyarısı)</span>`;
+    } else {
+        messageInfo.style.color = '#6c757d'; // Normal gri
+        messageInfo.innerHTML = `<span id="message-length">${length}</span> karakter`;
+    }
+    
+    // Element referansını tekrar güncelle
+    elements.messageLength = document.getElementById('message-length');
+    
     updateSendButton();
 }
 
@@ -285,6 +358,11 @@ async function loadTemplates() {
             option.textContent = template.name;
             elements.templateSelect.appendChild(option);
         });
+        
+        // Çoklu şablon modundaysa checkbox listesini de güncelle
+        if (currentTemplateMode === 'multiple') {
+            loadTemplateCheckboxes();
+        }
     } catch (error) {
         console.error('Şablon yükleme hatası:', error);
     }
@@ -367,6 +445,32 @@ async function startBulkSending() {
     const previewMode = elements.previewMode.checked;
     const sendOrder = document.getElementById('send-order')?.value || 'sequential';
 
+    // Çoklu şablon modunda kontroller
+    if (currentTemplateMode === 'multiple') {
+        if (selectedTemplates.length === 0) {
+            showModal('Uyarı', 'Çoklu şablon modunda en az bir şablon seçmelisiniz!');
+            return;
+        }
+        // Çoklu şablon modunda mesaj içeriği şablonlardan gelecek
+    } else {
+        // Tek şablon modunda mesaj kontrolü
+        if (!message) {
+            showModal('Uyarı', 'Mesaj içeriği boş!');
+            return;
+        }
+        
+        // Görsel ile mesaj uzunluğu kontrolü
+        if (selectedImage && message.length > 1024) {
+            showModal('Uyarı', 'Görsel ile birlikte gönderilen mesajlar maksimum 1024 karakter olabilir. Şu anki mesajınız ' + message.length + ' karakter. Lütfen mesajınızı kısaltın.');
+            return;
+        }
+        
+        // Sadece metin mesajı uzunluk kontrolü
+        if (!selectedImage && message.length > 4096) {
+            showModal('Uyarı', 'Çok uzun mesajlar WhatsApp tarafından reddedilebilir. Mesajınızı ' + message.length + ' karakter. 4096 karakterden kısa tutmanız önerilir.');
+        }
+    }
+
     // Sıralama seçimine göre numaraları sırala
     if (sendOrder === 'random') {
         numbers = shuffleArray(numbers);
@@ -388,10 +492,7 @@ async function startBulkSending() {
         showModal('Uyarı', 'Numara listesi boş!');
         return;
     }
-    if (!message) {
-        showModal('Uyarı', 'Mesaj içeriği boş!');
-        return;
-    }
+
     if (previewMode) {
         showModal('Önizleme', `Bu modda ${numbers.length} numaraya mesaj gönderilecek:\n\n${numbers.join('\n')}\n\nMesaj: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`);
         return;
@@ -407,13 +508,27 @@ async function startBulkSending() {
     startProgressPolling();
     
     try {
+        const requestData = { 
+            numbers, 
+            message, 
+            delay,
+            image: selectedImage,
+            templateMode: currentTemplateMode,
+            selectedTemplates: currentTemplateMode === 'multiple' ? selectedTemplates : null
+        };
+        
         const response = await fetch('/api/send-bulk', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ numbers, message, delay })
+            body: JSON.stringify(requestData)
         });
+        if (response.status === 413) {
+            showModal('Hata', 'Görsel çok büyük! Lütfen daha küçük bir görsel seçin (maksimum 5MB).');
+            return;
+        }
+        
         const data = await response.json();
         if (response.ok) {
             processSendingResults(data.results, numbers, data.skippedNumbers || []);
@@ -422,12 +537,21 @@ async function startBulkSending() {
         }
     } catch (error) {
         console.error('Mesaj gönderme hatası:', error);
-        showModal('Hata', 'Mesaj gönderimi başarısız!');
+        if (error.message.includes('Failed to fetch')) {
+            showModal('Hata', 'Sunucu bağlantısı kesildi. Lütfen sayfayı yenileyin.');
+        } else {
+            showModal('Hata', 'Mesaj gönderimi başarısız: ' + error.message);
+        }
     } finally {
         isSending = false;
         stopProgressPolling();
-        loadSentMessages();
-        updateStats(); // İstatistikleri güncelle
+        // Bağlantı varsa mesajları yükle
+        try {
+            loadSentMessages();
+            updateStats();
+        } catch (e) {
+            console.warn('Mesaj listesi yüklenemedi:', e);
+        }
     }
 }
 
@@ -553,11 +677,262 @@ async function updateStats() {
 }
 
 // Gönderimi durdur
-function stopBulkSending() {
-    shouldStopSending = true;
-    isSending = false;
-    stopProgressPolling();
-    showModal('Bilgi', 'Gönderim durduruldu.');
+async function stopBulkSending() {
+    try {
+        const response = await fetch('/api/control/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: 'manual-stop' })
+        });
+        
+        if (response.ok) {
+            shouldStopSending = true;
+            isSending = false;
+            stopProgressPolling();
+            showModal('Bilgi', 'Gönderim durduruldu.');
+        }
+    } catch (error) {
+        console.error('Durdurma hatası:', error);
+        showModal('Hata', 'Gönderim durdurulamadı.');
+    }
+}
+
+// Gönderimi duraklatı
+async function pauseBulkSending() {
+    try {
+        const response = await fetch('/api/control/pause', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: 'manual-pause' })
+        });
+        
+        if (response.ok) {
+            elements.pauseSending.style.display = 'none';
+            elements.resumeSending.style.display = 'inline-block';
+            hideAutoResumeCountdown(); // Manuel duraklatmada geri sayımı gizle
+            showModal('Bilgi', 'Gönderim duraklatıldı.');
+        }
+    } catch (error) {
+        console.error('Duraklatma hatası:', error);
+        showModal('Hata', 'Gönderim duraklatılamadı.');
+    }
+}
+
+// Gönderimi devam ettir
+async function resumeBulkSending() {
+    try {
+        const response = await fetch('/api/control/resume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (response.ok) {
+            elements.pauseSending.style.display = 'inline-block';
+            elements.resumeSending.style.display = 'none';
+            hideAutoResumeCountdown();
+            showModal('Bilgi', 'Gönderim devam ediyor.');
+        }
+    } catch (error) {
+        console.error('Devam ettirme hatası:', error);
+        showModal('Hata', 'Gönderim devam ettirilemedi.');
+    }
+}
+
+// Otomatik devam geri sayımını başlat
+function startAutoResumeCountdown() {
+    let seconds = 30; // 30 saniye
+    
+    elements.autoResumeInfo.style.display = 'block';
+    elements.countdownTimer.textContent = seconds;
+    
+    autoResumeCountdown = setInterval(() => {
+        seconds--;
+        elements.countdownTimer.textContent = seconds;
+        
+        if (seconds <= 0) {
+            clearInterval(autoResumeCountdown);
+            elements.autoResumeInfo.style.display = 'none';
+            // Otomatik devam ettirme - sunucu zaten yapacak ama UI'yi güncelle
+            elements.pauseSending.style.display = 'inline-block';
+            elements.resumeSending.style.display = 'none';
+        }
+    }, 1000);
+}
+
+// Otomatik devam geri sayımını gizle
+function hideAutoResumeCountdown() {
+    if (autoResumeCountdown) {
+        clearInterval(autoResumeCountdown);
+        autoResumeCountdown = null;
+    }
+    elements.autoResumeInfo.style.display = 'none';
+}
+
+// Görsel yükleme işlemi
+function handleImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Dosya boyutu kontrolü (2MB - daha güvenli)
+    if (file.size > 2 * 1024 * 1024) {
+        showModal('Uyarı', 'Görsel boyutu 2MB\'dan küçük olmalıdır. Seçilen dosya: ' + (file.size / 1024 / 1024).toFixed(2) + 'MB');
+        event.target.value = '';
+        return;
+    }
+    
+    // Dosya türü kontrolü
+    if (!file.type.startsWith('image/')) {
+        showModal('Uyarı', 'Sadece görsel dosyaları yükleyebilirsiniz.');
+        event.target.value = '';
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        selectedImage = {
+            data: e.target.result,
+            name: file.name,
+            type: file.type
+        };
+        
+        // Önizleme göster
+        elements.previewImg.src = e.target.result;
+        elements.imagePreview.style.display = 'block';
+        
+        // Mesaj uzunluğunu yeniden kontrol et
+        updateMessageLength();
+    };
+    
+    reader.readAsDataURL(file);
+}
+
+// Seçili görseli kaldır
+function removeSelectedImage() {
+    selectedImage = null;
+    elements.imageUpload.value = '';
+    elements.imagePreview.style.display = 'none';
+    elements.previewImg.src = '';
+    
+    // Mesaj uzunluğunu yeniden kontrol et
+    updateMessageLength();
+}
+
+// Örnek görsel yükle
+function loadSampleImage() {
+    // Lüks araç görseli için base64 data (küçük bir örnek)
+    const sampleImageData = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=';
+    
+    selectedImage = {
+        data: sampleImageData,
+        name: 'luxury-van.jpg',
+        type: 'image/jpeg'
+    };
+    
+    // Önizleme göster
+    elements.previewImg.src = sampleImageData;
+    elements.imagePreview.style.display = 'block';
+    
+    // Mesaj uzunluğunu yeniden kontrol et
+    updateMessageLength();
+    
+    showModal('Bilgi', 'Örnek lüks araç görseli yüklendi. Kendi görselinizi yüklemek için "Dosya Seç" butonunu kullanabilirsiniz.');
+}
+
+// Şablon modu değişimi
+function handleTemplateModeChange(event) {
+    currentTemplateMode = event.target.value;
+    
+    if (!elements.singleTemplateMode || !elements.multipleTemplateMode) {
+        console.warn('Template mode elements not found');
+        return;
+    }
+    
+    if (currentTemplateMode === 'single') {
+        elements.singleTemplateMode.style.display = 'block';
+        elements.multipleTemplateMode.style.display = 'none';
+        // Mesaj alanını aktif et
+        elements.messageContent.disabled = false;
+        elements.messageContent.placeholder = 'Mesajınızı buraya yazın...';
+    } else {
+        elements.singleTemplateMode.style.display = 'none';
+        elements.multipleTemplateMode.style.display = 'block';
+        // Mesaj alanını devre dışı bırak
+        elements.messageContent.disabled = true;
+        elements.messageContent.placeholder = 'Çoklu şablon modunda mesajlar seçili şablonlardan gelir...';
+        elements.messageContent.value = '';
+        loadTemplateCheckboxes();
+    }
+    
+    // Gönder butonunu güncelle
+    updateSendButton();
+}
+
+// Şablon checkbox listesini yükle
+function loadTemplateCheckboxes() {
+    if (!elements.templateCheckboxList) {
+        console.warn('Template checkbox list element not found');
+        return;
+    }
+    
+    if (!templates || templates.length === 0) {
+        elements.templateCheckboxList.innerHTML = '<p style="text-align: center; color: #666;">Henüz şablon yok</p>';
+        return;
+    }
+    
+    elements.templateCheckboxList.innerHTML = templates.map(template => `
+        <div class="template-checkbox-item">
+            <input type="checkbox" id="template-${template.id}" value="${template.id}" onchange="window.updateSelectedTemplates()">
+            <label for="template-${template.id}">
+                ${template.name}
+                <div class="template-preview">${template.content.substring(0, 50)}${template.content.length > 50 ? '...' : ''}</div>
+            </label>
+        </div>
+    `).join('');
+    
+    updateSelectedTemplatesCount();
+}
+
+// Seçili şablonları güncelle
+function updateSelectedTemplates() {
+    const checkboxes = document.querySelectorAll('#template-checkbox-list input[type="checkbox"]:checked');
+    selectedTemplates = Array.from(checkboxes).map(cb => parseInt(cb.value));
+    updateSelectedTemplatesCount();
+}
+
+// Global scope'a ekle
+window.updateSelectedTemplates = updateSelectedTemplates;
+
+// Seçili şablon sayısını güncelle
+function updateSelectedTemplatesCount() {
+    const count = selectedTemplates.length;
+    if (elements.selectedTemplatesCount) {
+        elements.selectedTemplatesCount.textContent = count;
+        
+        if (count > 0) {
+            elements.selectedTemplatesCount.parentElement.style.display = 'block';
+        } else {
+            elements.selectedTemplatesCount.parentElement.style.display = 'none';
+        }
+    }
+    
+    // Gönder butonunu güncelle
+    updateSendButton();
+}
+
+// Tüm şablonları seç/seçimi kaldır
+function selectAllTemplates() {
+    const checkboxes = document.querySelectorAll('#template-checkbox-list input[type="checkbox"]');
+    const allSelected = Array.from(checkboxes).every(cb => cb.checked);
+    
+    checkboxes.forEach(cb => {
+        cb.checked = !allSelected;
+    });
+    
+    updateSelectedTemplates();
+    
+    elements.selectAllTemplates.innerHTML = allSelected 
+        ? '<i class="fas fa-check-double"></i> Tümünü Seç'
+        : '<i class="fas fa-times"></i> Seçimi Kaldır';
 }
 
 // İlerleme çubuğunu güncelle
@@ -577,8 +952,27 @@ function startProgressPolling() {
     
     progressInterval = setInterval(async () => {
         try {
-            const response = await fetch('/api/progress');
-            const progress = await response.json();
+            const response = await fetch('/api/control/status');
+            const controlStatus = await response.json();
+            
+            // Duraklatma durumunu kontrol et ve butonları güncelle
+            if (controlStatus.isPaused) {
+                elements.pauseSending.style.display = 'none';
+                elements.resumeSending.style.display = 'inline-block';
+                
+                // Eğer otomatik duraklatma ise geri sayımı başlat
+                if (controlStatus.reason === 'auto-pause:inbound-message' && !autoResumeCountdown) {
+                    startAutoResumeCountdown();
+                }
+            } else {
+                elements.pauseSending.style.display = 'inline-block';
+                elements.resumeSending.style.display = 'none';
+                hideAutoResumeCountdown();
+            }
+            
+            // Progress bilgilerini al
+            const progressResponse = await fetch('/api/progress');
+            const progress = await progressResponse.json();
             
             if (progress.isActive) {
                 updateProgress(progress.current, progress.total);
@@ -588,6 +982,8 @@ function startProgressPolling() {
             } else {
                 // Progress tamamlandı, polling'i durdur
                 stopProgressPolling();
+                elements.pauseSending.style.display = 'none';
+                elements.resumeSending.style.display = 'none';
             }
         } catch (error) {
             console.error('Progress polling hatası:', error);
@@ -601,6 +997,7 @@ function stopProgressPolling() {
         clearInterval(progressInterval);
         progressInterval = null;
     }
+    hideAutoResumeCountdown();
 }
 
 // Gönderilen mesajları yükle

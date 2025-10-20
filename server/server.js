@@ -2,7 +2,7 @@
 
 
 const express = require('express');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
@@ -14,9 +14,25 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 // Statik dosyaları her zaman doğru dizinden servis et
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Hata yakalama middleware
+app.use((error, req, res, next) => {
+  if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
+    console.error('JSON Parse Error:', error.message);
+    return res.status(400).json({ error: 'Geçersiz JSON formatı' });
+  }
+  if (error.type === 'entity.too.large') {
+    console.error('Payload too large:', error.message);
+    return res.status(413).json({ error: 'Dosya çok büyük. Maksimum 50MB.' });
+  }
+  next();
+});
 
 // SQLite veritabanı başlatma
 const db = new sqlite3.Database('whatsapp.db');
@@ -66,7 +82,7 @@ const sendControlState = {
 // Auto pause config/state
 const autoPauseConfig = {
   enabled: true,
-  durationMs: 10 * 60 * 1000 // 10 dakika
+  durationMs: 30 * 1000 // 30 saniye
 };
 let autoPauseTimer = null;
 
@@ -210,6 +226,28 @@ async function initializeWhatsApp() {
       // Sadece bize gelen (bizden olmayan) mesajlarda çalış
       if (message.fromMe) return;
       if (!autoPauseConfig.enabled) return;
+      
+      // Sadece aktif gönderim varsa kontrol et
+      if (!currentSendingProgress.isActive) return;
+
+      // Mesajın kendi numaramıza mı geldiğini kontrol et
+      const chat = await message.getChat();
+      const contact = await message.getContact();
+      
+      // Eğer mesaj grup sohbetinden geliyorsa duraklatma
+      if (chat.isGroup) {
+        console.log('📱 Grup mesajı algılandı, duraklatma yapılmıyor');
+        return;
+      }
+      
+      // Eğer mesaj broadcast listesinden geliyorsa duraklatma  
+      if (chat.isBroadcast) {
+        console.log('📱 Broadcast mesajı algılandı, duraklatma yapılmıyor');
+        return;
+      }
+      
+      // Sadece bireysel sohbetlerde (kişisel mesajlarda) duraklat
+      console.log('📱 Kişisel mesaj algılandı:', contact.number || contact.id.user);
 
       // Otomatik duraklatmayı tetikle
       if (!sendControlState.isPaused && !sendControlState.isStopped) {
@@ -217,7 +255,7 @@ async function initializeWhatsApp() {
         sendControlState.reason = 'auto-pause:inbound-message';
         sendControlState.updatedAt = new Date().toISOString();
         currentSendingProgress.isPaused = true;
-        console.warn('⏸️ Gelen mesaj algılandı, gönderim otomatik olarak duraklatıldı');
+        console.warn('⏸️ Kişisel mesaj algılandı, gönderim otomatik olarak duraklatıldı');
       }
 
       // Varsa önceki zamanlayıcıyı temizle ve yeniden başlat
@@ -474,7 +512,7 @@ async function batchCheckNumbers(numbers) {
 
 // Toplu mesaj gönder
 app.post('/api/send-bulk', async (req, res) => {
-  const { numbers, message, delay } = req.body;
+  const { numbers, message, delay, image, templateMode, selectedTemplates } = req.body;
   
   if (!(isConnected || isAuthenticated)) {
     return res.status(400).json({ error: 'WhatsApp bağlı değil' });
@@ -484,8 +522,24 @@ app.post('/api/send-bulk', async (req, res) => {
     return res.status(400).json({ error: 'Geçerli numara listesi gerekli' });
   }
   
-  if (!message) {
-    return res.status(400).json({ error: 'Mesaj içeriği gerekli' });
+  // Çoklu şablon modunda kontrol
+  if (templateMode === 'multiple') {
+    if (!selectedTemplates || selectedTemplates.length === 0) {
+      return res.status(400).json({ error: 'Çoklu şablon modunda en az bir şablon seçmelisiniz' });
+    }
+  } else {
+    if (!message) {
+      return res.status(400).json({ error: 'Mesaj içeriği gerekli' });
+    }
+  }
+
+  // Mesaj uzunluğu kontrolü
+  if (image && message.length > 1024) {
+    return res.status(400).json({ error: 'Görsel ile birlikte gönderilen mesajlar maksimum 1024 karakter olabilir' });
+  }
+  
+  if (!image && message.length > 4096) {
+    console.warn(`⚠️ Uzun mesaj uyarısı: ${message.length} karakter`);
   }
 
   // Progress'i başlat
@@ -580,6 +634,40 @@ app.post('/api/send-bulk', async (req, res) => {
 
   console.log(`Kontrol tamamlandı: ${validNumbers.length} geçerli numara, ${skippedNumbers.length} atlanan numara`);
 
+  // Çoklu şablon modunda şablonları getir
+  let templateContents = [];
+  if (templateMode === 'multiple') {
+    if (!selectedTemplates || selectedTemplates.length === 0) {
+      return res.status(400).json({ error: 'Çoklu şablon modunda şablon seçilmemiş' });
+    }
+    
+    try {
+      const placeholders = selectedTemplates.map(() => '?').join(',');
+      const templateQuery = `SELECT * FROM message_templates WHERE id IN (${placeholders})`;
+      
+      const templateRows = await new Promise((resolve, reject) => {
+        db.all(templateQuery, selectedTemplates, (err, rows) => {
+          if (err) {
+            console.error('Veritabanı hatası:', err);
+            reject(err);
+          } else {
+            resolve(rows);
+          }
+        });
+      });
+      
+      templateContents = templateRows.map(row => row.content);
+      console.log(`${templateContents.length} şablon yüklendi (spam koruması aktif)`);
+      
+      if (templateContents.length === 0) {
+        return res.status(400).json({ error: 'Seçilen şablonlar bulunamadı' });
+      }
+    } catch (error) {
+      console.error('Şablon yükleme hatası:', error);
+      return res.status(500).json({ error: 'Şablonlar yüklenemedi: ' + error.message });
+    }
+  }
+
   // Şimdi sadece geçerli numaralara mesaj gönder
   if (validNumbers.length > 0) {
     console.log(`Mesaj gönderimi başlıyor: ${validNumbers.length} numara`);
@@ -600,6 +688,14 @@ app.post('/api/send-bulk', async (req, res) => {
       currentSendingProgress.isPaused = false;
       const { index, number } = validNumbers[i];
       
+      // Çoklu şablon modunda mesajı belirle
+      let currentMessage = message;
+      if (templateMode === 'multiple' && templateContents.length > 0) {
+        const templateIndex = i % templateContents.length;
+        currentMessage = templateContents[templateIndex];
+        console.log(`📝 Şablon ${templateIndex + 1}/${templateContents.length} kullanılıyor: ${number}`);
+      }
+      
       try {
         // Önce numaranın WhatsApp'ta kayıtlı olup olmadığını kontrol et
         const onlyDigits = number.replace(/\D/g, '');
@@ -615,7 +711,18 @@ app.post('/api/send-bulk', async (req, res) => {
         const chatId = jidInfo._serialized; // örn: 90555...@c.us
 
         // Mesaj gönder - timeout ile
-        const sendPromise = client.sendMessage(chatId, message);
+        let sendPromise;
+        
+        if (image && image.data) {
+          // Görsel ile mesaj gönder
+          const base64Data = image.data.split(',')[1]; // data:image/jpeg;base64, kısmını kaldır
+          const media = new MessageMedia(image.type, base64Data, image.name || 'image.jpg');
+          sendPromise = client.sendMessage(chatId, media, { caption: currentMessage });
+        } else {
+          // Sadece metin mesajı gönder
+          sendPromise = client.sendMessage(chatId, currentMessage);
+        }
+        
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Mesaj gönderimi zaman aşımı')), 30000)
         );
@@ -625,7 +732,7 @@ app.post('/api/send-bulk', async (req, res) => {
         
         // Gönderilen mesajı veritabanına kaydet
         db.run('INSERT INTO sent_messages (phone_number, message) VALUES (?, ?)', 
-          [number, message], (err) => {
+          [number, currentMessage], (err) => {
             if (err) {
               console.error('Veritabanı kayıt hatası:', err);
             }
@@ -648,12 +755,21 @@ app.post('/api/send-bulk', async (req, res) => {
           try {
             // Hazır olana kadar bekle (state alınabiliyorsa READY say)
             try { await client.getState(); } catch {}
-            const retryPromise = client.sendMessage(jidInfo?._serialized || chatId, message);
+            
+            let retryPromise;
+            if (image && image.data) {
+              const base64Data = image.data.split(',')[1];
+              const media = new MessageMedia(image.type, base64Data, image.name || 'image.jpg');
+              retryPromise = client.sendMessage(jidInfo?._serialized || chatId, media, { caption: currentMessage });
+            } else {
+              retryPromise = client.sendMessage(jidInfo?._serialized || chatId, currentMessage);
+            }
+            
             const retryTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Mesaj gönderimi zaman aşımı (retry)')), 30000));
             await Promise.race([retryPromise, retryTimeout]);
             // Başarılı retry
             db.run('INSERT INTO sent_messages (phone_number, message) VALUES (?, ?)', 
-              [number, message], (err) => { if (err) console.error('Veritabanı kayıt hatası:', err); });
+              [number, currentMessage], (err) => { if (err) console.error('Veritabanı kayıt hatası:', err); });
             results[index] = { number: number, success: true };
             currentSendingProgress.successCount++;
             console.log(`✅ Başarılı (yeniden deneme): ${number}`);

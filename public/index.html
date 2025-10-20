@@ -6,6 +6,7 @@
     <title>WhatsApp Toplu Mesaj Gönderici</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📱</text></svg>">
 </head>
 <body>
     <div class="container">
@@ -60,19 +61,66 @@
             <!-- Mesaj Şablonu Bölümü -->
             <div class="card">
                 <h2><i class="fas fa-edit"></i> Mesaj Şablonu</h2>
-                <div class="template-controls">
-                    <select id="template-select" class="form-control">
-                        <option value="">Şablon seçin...</option>
-                    </select>
-                    <button id="save-template" class="btn btn-primary">
-                        <i class="fas fa-save"></i> Şablonu Kaydet
-                    </button>
+                <div class="template-mode-selector">
+                    <label>
+                        <input type="radio" name="template-mode" value="single" checked>
+                        <span>Tek Şablon</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="template-mode" value="multiple">
+                        <span>Çoklu Şablon (Spam Koruması)</span>
+                    </label>
+                </div>
+                
+                <!-- Tek Şablon Modu -->
+                <div id="single-template-mode" class="template-mode-content">
+                    <div class="template-controls">
+                        <select id="template-select" class="form-control">
+                            <option value="">Şablon seçin...</option>
+                        </select>
+                        <button id="save-template" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Şablonu Kaydet
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Çoklu Şablon Modu -->
+                <div id="multiple-template-mode" class="template-mode-content" style="display: none;">
+                    <div class="multiple-template-controls">
+                        <div class="template-list-header">
+                            <label>Seçili Şablonlar (Sırayla gönderilecek):</label>
+                            <button id="select-all-templates" class="btn btn-info btn-sm">
+                                <i class="fas fa-check-double"></i> Tümünü Seç
+                            </button>
+                        </div>
+                        <div id="template-checkbox-list" class="template-checkbox-list">
+                            <!-- Şablonlar buraya yüklenecek -->
+                        </div>
+                        <div class="selected-templates-info">
+                            <span id="selected-templates-count">0</span> şablon seçildi
+                        </div>
+                    </div>
                 </div>
                 <div class="input-group">
                     <label for="message-content">Mesaj İçeriği:</label>
                     <textarea id="message-content" placeholder="Mesajınızı buraya yazın..." rows="6"></textarea>
                     <div class="message-info">
                         <span id="message-length">0</span> karakter
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label for="image-upload">Görsel Ekle (İsteğe Bağlı):</label>
+                    <div class="image-upload-container">
+                        <input type="file" id="image-upload" accept="image/*" class="form-control">
+                        <button type="button" id="load-sample-image" class="btn btn-info btn-sm">
+                            <i class="fas fa-car"></i> Örnek Görsel Yükle (Lüks Araç)
+                        </button>
+                        <div id="image-preview" class="image-preview" style="display: none;">
+                            <img id="preview-img" src="" alt="Önizleme">
+                            <button type="button" id="remove-image" class="btn btn-danger btn-sm">
+                                <i class="fas fa-times"></i> Kaldır
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="template-save-form" id="template-save-form" style="display: none;">
@@ -138,9 +186,21 @@
                         <span>Atlanan: <span id="skipped-count">0</span></span>
                     </div>
                 </div>
-                <button id="stop-sending" class="btn btn-danger">
-                    <i class="fas fa-stop"></i> Gönderimi Durdur
-                </button>
+                <div id="auto-resume-info" class="auto-resume-info" style="display: none;">
+                    <i class="fas fa-clock"></i>
+                    <span>Otomatik devam: <span id="countdown-timer">30</span> saniye</span>
+                </div>
+                <div class="control-buttons">
+                    <button id="pause-sending" class="btn btn-warning" style="display: none;">
+                        <i class="fas fa-pause"></i> Duraklatı
+                    </button>
+                    <button id="resume-sending" class="btn btn-success" style="display: none;">
+                        <i class="fas fa-play"></i> Devam Et
+                    </button>
+                    <button id="stop-sending" class="btn btn-danger">
+                        <i class="fas fa-stop"></i> Gönderimi Durdur
+                    </button>
+                </div>
             </div>
 
             <!-- İstatistik Kartı -->
