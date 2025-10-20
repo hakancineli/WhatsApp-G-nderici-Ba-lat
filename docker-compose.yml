@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  whatsapp-sender:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+      - ./.wwebjs_auth:/app/.wwebjs_auth
+      - ./.chrome-data:/app/.chrome-data
+    environment:
+      - NODE_ENV=production
+      - HEADLESS=true
+    restart: unless-stopped
