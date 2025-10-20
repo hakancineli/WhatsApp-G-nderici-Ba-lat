@@ -10,6 +10,7 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
+const keepAlive = require('../keep-alive');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -906,4 +907,7 @@ app.listen(PORT, async () => {
   // Session restore et ve sonra WhatsApp'ı başlat
   await restoreSession();
   await initializeWhatsApp();
+  
+  // Keep-alive sistemi başlat (sleep önleme)
+  keepAlive();
 }); 

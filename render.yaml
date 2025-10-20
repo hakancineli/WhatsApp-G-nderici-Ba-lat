@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: whatsapp-sender
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HEADLESS
+        value: true
+      - key: WHATSAPP_SESSION_BASE64
+        sync: false
