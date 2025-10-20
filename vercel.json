@@ -1,10 +1,24 @@
 {
   "version": 2,
   "builds": [
-    { "src": "public/**/*", "use": "@vercel/static" }
+    {
+      "src": "server/server.js",
+      "use": "@vercel/node"
+    }
   ],
   "routes": [
-    { "src": "/api/(.*)", "dest": "http://35.189.194.240/api/$1" },
-    { "src": "/(.*)", "dest": "/public/$1" }
-  ]
+    {
+      "src": "/(.*)",
+      "dest": "server/server.js"
+    }
+  ],
+  "functions": {
+    "server/server.js": {
+      "maxDuration": 30
+    }
+  },
+  "env": {
+    "NODE_ENV": "production",
+    "VERCEL_ENV": "production"
+  }
 }

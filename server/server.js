@@ -8,6 +8,8 @@ const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
+const fs = require('fs');
+const { execSync } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -85,6 +87,29 @@ const autoPauseConfig = {
   durationMs: 30 * 1000 // 30 saniye
 };
 let autoPauseTimer = null;
+
+// Session restore fonksiyonu
+async function restoreSession() {
+  const sessionBase64 = process.env.WHATSAPP_SESSION_BASE64;
+  
+  if (sessionBase64 && !fs.existsSync('.wwebjs_auth')) {
+    console.log('🔄 Session restore ediliyor...');
+    
+    try {
+      // Base64'ü decode et
+      const sessionBuffer = Buffer.from(sessionBase64, 'base64');
+      fs.writeFileSync('session.tar.gz', sessionBuffer);
+      
+      // Extract et
+      execSync('tar -xzf session.tar.gz');
+      execSync('rm session.tar.gz');
+      
+      console.log('✅ Session başarıyla restore edildi');
+    } catch (error) {
+      console.error('❌ Session restore hatası:', error);
+    }
+  }
+}
 
 // WhatsApp client başlatma
 async function initializeWhatsApp() {
@@ -877,5 +902,8 @@ process.on('SIGTERM', async () => {
 app.listen(PORT, async () => {
   console.log(`🌐 Sunucu http://localhost:${PORT} adresinde çalışıyor`);
   console.log('📱 WhatsApp client başlatılıyor...');
+  
+  // Session restore et ve sonra WhatsApp'ı başlat
+  await restoreSession();
   await initializeWhatsApp();
 }); 
